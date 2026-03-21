@@ -16,7 +16,12 @@ jobs:
       - name: Build binary
         run: |
           mkdir -p build
-          swiftc -O -framework Cocoa cursor_highlight_overlay.swift -o build/CursorHighlight
+          swiftc -O \
+          -target x86_64-apple-macos10.13 \
+          -mmacosx-version-min=10.13 \
+          -framework Cocoa \
+          cursor_highlight_overlay.swift \
+          -o build/CursorHighlight
 
       - name: Package app bundle
         run: |
@@ -31,14 +36,10 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-              <key>CFBundleDevelopmentRegion</key>
-              <string>en</string>
               <key>CFBundleExecutable</key>
               <string>CursorHighlight</string>
               <key>CFBundleIdentifier</key>
               <string>com.example.cursorhighlight</string>
-              <key>CFBundleInfoDictionaryVersion</key>
-              <string>6.0</string>
               <key>CFBundleName</key>
               <string>CursorHighlight</string>
               <key>CFBundlePackageType</key>
