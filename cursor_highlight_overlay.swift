@@ -1,4 +1,5 @@
 import Cocoa
+import CoreGraphics
 
 struct AppSettings {
     static let ringRadius = "ringRadius"
@@ -8,25 +9,25 @@ struct AppSettings {
     static let showCenterDot = "showCenterDot"
     static let overlayVisible = "overlayVisible"
     static let fakePointerVisible = "fakePointerVisible"
+    static let pointerSize = "pointerSize"
 }
+
+// MARK: - Ring View
 
 final class RingView: NSView {
     var ringColor: NSColor = .systemYellow { didSet { needsDisplay = true } }
     var fillOpacity: CGFloat = 0.18 { didSet { needsDisplay = true } }
     var strokeOpacity: CGFloat = 0.95 { didSet { needsDisplay = true } }
     var showCenterDot: Bool = true { didSet { needsDisplay = true } }
-    var centerDotColor: NSColor = .systemRed { didSet { needsDisplay = true } }
 
     override var isOpaque: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard bounds.width > 2, bounds.height > 2 else { return }
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         ctx.clear(bounds)
+        guard bounds.width > 2, bounds.height > 2 else { return }
 
-        let inset: CGFloat = 5
-        let rect = bounds.insetBy(dx: inset, dy: inset)
+        let rect = bounds.insetBy(dx: 5, dy: 5)
 
         let outer = NSBezierPath(ovalIn: rect)
         ringColor.withAlphaComponent(strokeOpacity).setStroke()
@@ -38,16 +39,10 @@ final class RingView: NSView {
         inner.fill()
 
         if showCenterDot {
-            let centerSize: CGFloat = max(4, min(bounds.width, bounds.height) * 0.11)
-            let centerRect = NSRect(
-                x: bounds.midX - centerSize / 2,
-                y: bounds.midY - centerSize / 2,
-                width: centerSize,
-                height: centerSize
-            )
-            let centerDot = NSBezierPath(ovalIn: centerRect)
-            centerDotColor.withAlphaComponent(0.95).setFill()
-            centerDot.fill()
+            let s: CGFloat = max(4, min(bounds.width, bounds.height) * 0.12)
+            let dotRect = NSRect(x: bounds.midX - s / 2, y: bounds.midY - s / 2, width: s, height: s)
+            NSColor.systemRed.withAlphaComponent(0.95).setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
         }
     }
 }
@@ -65,24 +60,25 @@ final class OverlayWindow: NSWindow {
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
-        let view = RingView(frame: frame)
-        contentView = view
+        contentView = RingView(frame: frame)
     }
 
     var ringView: RingView? { contentView as? RingView }
 
     func updateDiameter(_ diameter: CGFloat) {
-        let newFrame = NSRect(origin: frame.origin, size: NSSize(width: diameter, height: diameter))
-        setFrame(newFrame, display: true)
-        ringView?.frame = NSRect(origin: .zero, size: newFrame.size)
+        let size = NSSize(width: diameter, height: diameter)
+        setFrame(NSRect(origin: frame.origin, size: size), display: true)
+        ringView?.frame = NSRect(origin: .zero, size: size)
         ringView?.needsDisplay = true
     }
 }
 
+// MARK: - Fake Pointer
+
 final class PointerWindow: NSWindow {
     private let pointerLayer = CAShapeLayer()
 
-    init(size: CGFloat = 26) {
+    init(size: CGFloat) {
         let frame = NSRect(x: 0, y: 0, width: size, height: size)
         super.init(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
 
@@ -90,83 +86,98 @@ final class PointerWindow: NSWindow {
         level = .screenSaver
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        hasShadow = false
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
         let view = NSView(frame: frame)
         view.wantsLayer = true
         contentView = view
-
-        pointerLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
         view.layer?.addSublayer(pointerLayer)
         redrawPointer()
     }
 
-    func redrawPointer() {
-        let w = contentView?.bounds.width ?? 26
-        let h = contentView?.bounds.height ?? 26
-        pointerLayer.frame = CGRect(x: 0, y: 0, width: w, height: h)
+    func resize(_ size: CGFloat) {
+        let newFrame = NSRect(origin: frame.origin, size: NSSize(width: size, height: size))
+        setFrame(newFrame, display: true)
+        contentView?.frame = NSRect(origin: .zero, size: newFrame.size)
+        redrawPointer()
+    }
+
+    private func redrawPointer() {
+        let w = frame.width
+        let h = frame.height
 
         let p = NSBezierPath()
-        p.move(to: NSPoint(x: 4, y: h - 4))
-        p.line(to: NSPoint(x: 4, y: 3))
-        p.line(to: NSPoint(x: w * 0.60, y: h * 0.36))
-        p.line(to: NSPoint(x: w * 0.46, y: h * 0.31))
-        p.line(to: NSPoint(x: w * 0.68, y: 4))
-        p.line(to: NSPoint(x: w * 0.56, y: 1))
-        p.line(to: NSPoint(x: w * 0.35, y: h * 0.28))
-        p.line(to: NSPoint(x: w * 0.30, y: h * 0.42))
+        p.move(to: NSPoint(x: w * 0.15, y: h * 0.95))
+        p.line(to: NSPoint(x: w * 0.15, y: h * 0.05))
+        p.line(to: NSPoint(x: w * 0.64, y: h * 0.34))
+        p.line(to: NSPoint(x: w * 0.52, y: h * 0.31))
+        p.line(to: NSPoint(x: w * 0.76, y: h * 0.05))
+        p.line(to: NSPoint(x: w * 0.62, y: h * 0.02))
+        p.line(to: NSPoint(x: w * 0.40, y: h * 0.30))
+        p.line(to: NSPoint(x: w * 0.35, y: h * 0.45))
         p.close()
 
-        let cgPath = CGMutablePath()
+        let cg = CGMutablePath()
         for i in 0..<p.elementCount {
             var pts = [NSPoint](repeating: .zero, count: 3)
-            let type = p.element(at: i, associatedPoints: &pts)
-            switch type {
+            let t = p.element(at: i, associatedPoints: &pts)
+            switch t {
             case .moveTo:
-                cgPath.move(to: pts[0])
+                cg.move(to: pts[0])
             case .lineTo:
-                cgPath.addLine(to: pts[0])
+                cg.addLine(to: pts[0])
             case .curveTo:
-                cgPath.addCurve(to: pts[2], control1: pts[0], control2: pts[1])
+                cg.addCurve(to: pts[2], control1: pts[0], control2: pts[1])
             case .closePath:
-                cgPath.closeSubpath()
+                cg.closeSubpath()
             @unknown default:
                 break
             }
         }
 
-        pointerLayer.path = cgPath
+        pointerLayer.frame = CGRect(x: 0, y: 0, width: w, height: h)
+        pointerLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        pointerLayer.path = cg
         pointerLayer.fillColor = NSColor.black.withAlphaComponent(0.96).cgColor
         pointerLayer.strokeColor = NSColor.white.withAlphaComponent(0.85).cgColor
-        pointerLayer.lineWidth = 1.0
+        pointerLayer.lineWidth = max(1.0, w * 0.03)
         pointerLayer.shadowColor = NSColor.black.cgColor
         pointerLayer.shadowOpacity = 0.22
-        pointerLayer.shadowRadius = 1.5
+        pointerLayer.shadowRadius = max(1.0, w * 0.04)
         pointerLayer.shadowOffset = CGSize(width: 0.8, height: -0.8)
     }
 }
 
+// MARK: - App Delegate
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: OverlayWindow!
-    private var fakePointer: PointerWindow!
+    private var pointer: PointerWindow!
     private var statusItem: NSStatusItem!
-    private var globalMouseMonitor: Any?
-    private var localMouseMonitor: Any?
+
+    private var localMonitor: Any?
+    private var fallbackTimer: Timer?
     private var spaceObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
-    private var fallbackTimer: Timer?
+
+    private var eventTap: CFMachPort?
+    private var eventTapSource: CFRunLoopSource?
 
     private let defaults = UserDefaults.standard
 
-    private var overlayVisible = true { didSet { saveSettings() } }
-    private var fakePointerVisible = false { didSet { saveSettings() } }
     private var ringRadius: CGFloat = 28 { didSet { saveSettings() } }
+    private var pointerSize: CGFloat = 36 { didSet { saveSettings() } }
     private var fillOpacity: CGFloat = 0.18 { didSet { saveSettings() } }
     private var strokeOpacity: CGFloat = 0.95 { didSet { saveSettings() } }
     private var currentColorName: String = "yellow" { didSet { saveSettings() } }
-    private var centerDotEnabled = true { didSet { saveSettings() } }
+    private var showCenterDot = true { didSet { saveSettings() } }
+    private var overlayVisible = true { didSet { saveSettings() } }
+    private var pointerVisible = false { didSet { saveSettings() } }
+
+    private var lastMouseLocation: CGPoint = .zero
+    private var lastMotionTimestamp: CFAbsoluteTime = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -174,90 +185,171 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loadSettings()
 
         overlay = OverlayWindow(diameter: ringRadius * 2)
-        fakePointer = PointerWindow()
+        pointer = PointerWindow(size: pointerSize)
 
-        applySettingsToViews()
+        applyVisualSettings()
         applyVisibility()
-        setupMenuBar()
-        startHybridTracking()
-        updateOverlayPosition(force: true)
+        setupMenu()
+        startTracking()
+        updatePosition(force: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        stopHybridTracking()
+        stopTracking()
         saveSettings()
     }
 
-    private func setupMenuBar() {
+    // MARK: Menu
+
+    private func setupMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = statusItem.button {
-            button.title = "◎"
-            button.toolTip = "Cursor Highlight"
-        }
+        statusItem.button?.title = "◎"
+        statusItem.button?.toolTip = "Cursor Highlight"
 
         let menu = NSMenu()
-
-        let toggleHighlight = NSMenuItem(title: "显示/隐藏高亮圈", action: #selector(toggleOverlay), keyEquivalent: "h")
-        toggleHighlight.target = self
-        menu.addItem(toggleHighlight)
-
-        let togglePointer = NSMenuItem(title: "显示/隐藏附加光标", action: #selector(toggleFakePointer), keyEquivalent: "p")
-        togglePointer.target = self
-        menu.addItem(togglePointer)
-
-        let toggleDot = NSMenuItem(title: "显示/隐藏中心点", action: #selector(toggleCenterDot), keyEquivalent: "d")
-        toggleDot.target = self
-        menu.addItem(toggleDot)
-
+        menu.addItem(menuItem("显示/隐藏高亮圈", #selector(toggleOverlay)))
+        menu.addItem(menuItem("显示/隐藏附加光标", #selector(togglePointer)))
+        menu.addItem(menuItem("显示/隐藏中心点", #selector(toggleCenterDot)))
         menu.addItem(NSMenuItem.separator())
 
-        let colorMenu = NSMenuItem(title: "高亮颜色", action: nil, keyEquivalent: "")
+        let colorItem = NSMenuItem(title: "高亮颜色", action: nil, keyEquivalent: "")
         let colorSub = NSMenu()
-        colorSub.addItem(menuItem(title: "黄色", action: #selector(setColorYellow)))
-        colorSub.addItem(menuItem(title: "绿色", action: #selector(setColorGreen)))
-        colorSub.addItem(menuItem(title: "蓝色", action: #selector(setColorBlue)))
-        colorSub.addItem(menuItem(title: "红色", action: #selector(setColorRed)))
-        colorSub.addItem(menuItem(title: "紫色", action: #selector(setColorPurple)))
-        colorSub.addItem(menuItem(title: "青色", action: #selector(setColorCyan)))
-        menu.setSubmenu(colorSub, for: colorMenu)
-        menu.addItem(colorMenu)
+        colorSub.addItem(menuItem("黄色", #selector(setColorYellow)))
+        colorSub.addItem(menuItem("绿色", #selector(setColorGreen)))
+        colorSub.addItem(menuItem("蓝色", #selector(setColorBlue)))
+        colorSub.addItem(menuItem("红色", #selector(setColorRed)))
+        colorSub.addItem(menuItem("紫色", #selector(setColorPurple)))
+        colorSub.addItem(menuItem("青色", #selector(setColorCyan)))
+        menu.setSubmenu(colorSub, for: colorItem)
+        menu.addItem(colorItem)
 
-        let radiusMenu = NSMenuItem(title: "半径", action: nil, keyEquivalent: "")
+        let radiusItem = NSMenuItem(title: "高亮半径", action: nil, keyEquivalent: "")
         let radiusSub = NSMenu()
-        radiusSub.addItem(menuItem(title: "16", action: #selector(setRadius16)))
-        radiusSub.addItem(menuItem(title: "24", action: #selector(setRadius24)))
-        radiusSub.addItem(menuItem(title: "32", action: #selector(setRadius32)))
-        radiusSub.addItem(menuItem(title: "40", action: #selector(setRadius40)))
-        radiusSub.addItem(menuItem(title: "52", action: #selector(setRadius52)))
-        menu.setSubmenu(radiusSub, for: radiusMenu)
-        menu.addItem(radiusMenu)
+        radiusSub.addItem(menuItem("16", #selector(setRadius16)))
+        radiusSub.addItem(menuItem("24", #selector(setRadius24)))
+        radiusSub.addItem(menuItem("32", #selector(setRadius32)))
+        radiusSub.addItem(menuItem("40", #selector(setRadius40)))
+        radiusSub.addItem(menuItem("52", #selector(setRadius52)))
+        menu.setSubmenu(radiusSub, for: radiusItem)
+        menu.addItem(radiusItem)
 
-        let alphaMenu = NSMenuItem(title: "透明度", action: nil, keyEquivalent: "")
+        let alphaItem = NSMenuItem(title: "透明度", action: nil, keyEquivalent: "")
         let alphaSub = NSMenu()
-        alphaSub.addItem(menuItem(title: "很淡", action: #selector(setAlphaLow)))
-        alphaSub.addItem(menuItem(title: "中等", action: #selector(setAlphaMedium)))
-        alphaSub.addItem(menuItem(title: "较强", action: #selector(setAlphaHigh)))
-        alphaSub.addItem(menuItem(title: "很强", action: #selector(setAlphaVeryHigh)))
-        menu.setSubmenu(alphaSub, for: alphaMenu)
-        menu.addItem(alphaMenu)
+        alphaSub.addItem(menuItem("很淡", #selector(setAlphaLow)))
+        alphaSub.addItem(menuItem("中等", #selector(setAlphaMedium)))
+        alphaSub.addItem(menuItem("较强", #selector(setAlphaHigh)))
+        alphaSub.addItem(menuItem("很强", #selector(setAlphaVeryHigh)))
+        menu.setSubmenu(alphaSub, for: alphaItem)
+        menu.addItem(alphaItem)
+
+        let pointerSizeItem = NSMenuItem(title: "附加光标大小", action: nil, keyEquivalent: "")
+        let pointerSizeSub = NSMenu()
+        pointerSizeSub.addItem(menuItem("小", #selector(pointerSmall)))
+        pointerSizeSub.addItem(menuItem("中", #selector(pointerMedium)))
+        pointerSizeSub.addItem(menuItem("大", #selector(pointerLarge)))
+        pointerSizeSub.addItem(menuItem("超大", #selector(pointerXL)))
+        menu.setSubmenu(pointerSizeSub, for: pointerSizeItem)
+        menu.addItem(pointerSizeItem)
 
         menu.addItem(NSMenuItem.separator())
-
-        let quitItem = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
-
+        menu.addItem(menuItem("退出", #selector(quit)))
         statusItem.menu = menu
     }
 
-    private func menuItem(title: String, action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+    private func menuItem(_ title: String, _ sel: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: sel, keyEquivalent: "")
         item.target = self
         return item
     }
 
-    private func startHybridTracking() {
-        let mouseEvents: NSEvent.EventTypeMask = [
+    // MARK: Tracking
+
+    private func startTracking() {
+        installEventTap()
+        installLocalMonitor()
+        installFallbackTimer()
+        installWorkspaceObservers()
+    }
+
+    private func stopTracking() {
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+            self.localMonitor = nil
+        }
+
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
+
+        if let source = eventTapSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            eventTapSource = nil
+        }
+        if let tap = eventTap {
+            CFMachPortInvalidate(tap)
+            eventTap = nil
+        }
+
+        let center = NSWorkspace.shared.notificationCenter
+        if let spaceObserver {
+            center.removeObserver(spaceObserver)
+            self.spaceObserver = nil
+        }
+        if let wakeObserver {
+            center.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
+    }
+
+    private func installEventTap() {
+        let mask = (1 << CGEventType.mouseMoved.rawValue)
+            | (1 << CGEventType.leftMouseDragged.rawValue)
+            | (1 << CGEventType.rightMouseDragged.rawValue)
+            | (1 << CGEventType.otherMouseDragged.rawValue)
+            | (1 << CGEventType.leftMouseDown.rawValue)
+            | (1 << CGEventType.rightMouseDown.rawValue)
+            | (1 << CGEventType.otherMouseDown.rawValue)
+            | (1 << CGEventType.leftMouseUp.rawValue)
+            | (1 << CGEventType.rightMouseUp.rawValue)
+            | (1 << CGEventType.otherMouseUp.rawValue)
+            | (1 << CGEventType.scrollWheel.rawValue)
+
+        let callback: CGEventTapCallBack = { _, type, event, userInfo in
+            guard let userInfo else { return Unmanaged.passUnretained(event) }
+            let app = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
+
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                if let tap = app.eventTap {
+                    CGEvent.tapEnable(tap: tap, enable: true)
+                }
+                return Unmanaged.passUnretained(event)
+            }
+
+            app.noteMotionAndUpdatePosition()
+            return Unmanaged.passUnretained(event)
+        }
+
+        let userInfo = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: CGEventMask(mask),
+            callback: callback,
+            userInfo: userInfo
+        ) else {
+            installFallbackTimer(hz: 30)
+            return
+        }
+
+        eventTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        eventTapSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    private func installLocalMonitor() {
+        let mask: NSEvent.EventTypeMask = [
             .mouseMoved,
             .leftMouseDragged,
             .rightMouseDragged,
@@ -272,29 +364,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .cursorUpdate
         ]
 
-        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseEvents) { [weak self] _ in
-            self?.updateOverlayPosition(force: false)
-        }
-
-        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseEvents) { [weak self] event in
-            self?.updateOverlayPosition(force: false)
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.noteMotionAndUpdatePosition()
             return event
         }
+    }
 
-        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 12.0, repeats: true) { [weak self] _ in
-            self?.updateOverlayPosition(force: false)
+    private func installFallbackTimer(hz: Double = 20) {
+        fallbackTimer?.invalidate()
+        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / hz, repeats: true) { [weak self] _ in
+            self?.adaptivePollingTick()
         }
         if let fallbackTimer {
             RunLoop.main.add(fallbackTimer, forMode: .common)
         }
+    }
 
+    private func installWorkspaceObservers() {
         let center = NSWorkspace.shared.notificationCenter
         spaceObserver = center.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.updateOverlayPosition(force: true)
+            self?.updatePosition(force: true)
         }
 
         wakeObserver = center.addObserver(
@@ -302,86 +395,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.updateOverlayPosition(force: true)
+            self?.updatePosition(force: true)
         }
     }
 
-    private func stopHybridTracking() {
-        if let globalMouseMonitor {
-            NSEvent.removeMonitor(globalMouseMonitor)
-            self.globalMouseMonitor = nil
+    private func noteMotionAndUpdatePosition() {
+        lastMotionTimestamp = CFAbsoluteTimeGetCurrent()
+        updatePosition(force: false)
+    }
+
+    private func adaptivePollingTick() {
+        let now = CFAbsoluteTimeGetCurrent()
+        let elapsed = now - lastMotionTimestamp
+
+        if elapsed < 0.20 {
+            updatePosition(force: false)
+            return
         }
-        if let localMouseMonitor {
-            NSEvent.removeMonitor(localMouseMonitor)
-            self.localMouseMonitor = nil
+
+        if elapsed < 1.20 {
+            updatePosition(force: false)
+            return
         }
-        fallbackTimer?.invalidate()
-        fallbackTimer = nil
-        let center = NSWorkspace.shared.notificationCenter
-        if let spaceObserver {
-            center.removeObserver(spaceObserver)
-            self.spaceObserver = nil
-        }
-        if let wakeObserver {
-            center.removeObserver(wakeObserver)
-            self.wakeObserver = nil
+
+        if overlayVisible || pointerVisible {
+            let p = NSEvent.mouseLocation
+            if abs(p.x - lastMouseLocation.x) > 0.1 || abs(p.y - lastMouseLocation.y) > 0.1 {
+                updatePosition(force: false)
+            }
         }
     }
 
-    private func applySettingsToViews() {
+    private func updatePosition(force: Bool) {
+        guard overlayVisible || pointerVisible || force else { return }
+
+        let p = NSEvent.mouseLocation
+        lastMouseLocation = p
+
+        if overlayVisible {
+            overlay.setFrameOrigin(NSPoint(x: p.x - ringRadius, y: p.y - ringRadius))
+            overlay.orderFrontRegardless()
+        }
+
+        if pointerVisible {
+            pointer.setFrameOrigin(NSPoint(x: p.x - pointerSize * 0.20, y: p.y - pointerSize * 0.90))
+            pointer.orderFrontRegardless()
+        }
+    }
+
+    // MARK: Settings / Appearance
+
+    private func applyVisualSettings() {
         overlay.updateDiameter(ringRadius * 2)
         overlay.ringView?.ringColor = colorFromName(currentColorName)
         overlay.ringView?.fillOpacity = fillOpacity
         overlay.ringView?.strokeOpacity = strokeOpacity
-        overlay.ringView?.showCenterDot = centerDotEnabled
+        overlay.ringView?.showCenterDot = showCenterDot
+        pointer.resize(pointerSize)
     }
 
     private func applyVisibility() {
-        if overlayVisible {
-            overlay.orderFrontRegardless()
-        } else {
-            overlay.orderOut(nil)
-        }
-
-        if fakePointerVisible {
-            fakePointer.orderFrontRegardless()
-        } else {
-            fakePointer.orderOut(nil)
-        }
-    }
-
-    private func updateOverlayPosition(force: Bool) {
-        guard overlayVisible || fakePointerVisible || force else { return }
-        let mouse = NSEvent.mouseLocation
-
-        if overlayVisible {
-            let newOrigin = NSPoint(x: mouse.x - ringRadius, y: mouse.y - ringRadius)
-            overlay.setFrameOrigin(newOrigin)
-            overlay.orderFrontRegardless()
-        }
-
-        if fakePointerVisible {
-            let pointerOrigin = NSPoint(x: mouse.x - 4, y: mouse.y - (fakePointer.frame.height - 4))
-            fakePointer.setFrameOrigin(pointerOrigin)
-            fakePointer.orderFrontRegardless()
-        }
-    }
-
-    private func setRadius(_ radius: CGFloat) {
-        ringRadius = radius
-        applySettingsToViews()
-        updateOverlayPosition(force: true)
-    }
-
-    private func setOpacity(fill: CGFloat, stroke: CGFloat) {
-        fillOpacity = fill
-        strokeOpacity = stroke
-        applySettingsToViews()
-    }
-
-    private func setRingColor(name: String) {
-        currentColorName = name
-        applySettingsToViews()
+        overlayVisible ? overlay.orderFront(nil) : overlay.orderOut(nil)
+        pointerVisible ? pointer.orderFront(nil) : pointer.orderOut(nil)
     }
 
     private func colorFromName(_ name: String) -> NSColor {
@@ -395,19 +470,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func setRingColor(_ name: String) {
+        currentColorName = name
+        overlay.ringView?.ringColor = colorFromName(name)
+    }
+
+    private func setRadius(_ radius: CGFloat) {
+        ringRadius = radius
+        overlay.updateDiameter(radius * 2)
+        updatePosition(force: true)
+    }
+
+    private func setOpacity(fill: CGFloat, stroke: CGFloat) {
+        fillOpacity = fill
+        strokeOpacity = stroke
+        overlay.ringView?.fillOpacity = fill
+        overlay.ringView?.strokeOpacity = stroke
+    }
+
+    private func setPointerSize(_ size: CGFloat) {
+        pointerSize = size
+        pointer.resize(size)
+        updatePosition(force: true)
+    }
+
     private func saveSettings() {
         defaults.set(Double(ringRadius), forKey: AppSettings.ringRadius)
+        defaults.set(Double(pointerSize), forKey: AppSettings.pointerSize)
         defaults.set(Double(fillOpacity), forKey: AppSettings.fillOpacity)
         defaults.set(Double(strokeOpacity), forKey: AppSettings.strokeOpacity)
         defaults.set(currentColorName, forKey: AppSettings.colorName)
-        defaults.set(centerDotEnabled, forKey: AppSettings.showCenterDot)
+        defaults.set(showCenterDot, forKey: AppSettings.showCenterDot)
         defaults.set(overlayVisible, forKey: AppSettings.overlayVisible)
-        defaults.set(fakePointerVisible, forKey: AppSettings.fakePointerVisible)
+        defaults.set(pointerVisible, forKey: AppSettings.fakePointerVisible)
     }
 
     private func loadSettings() {
         if defaults.object(forKey: AppSettings.ringRadius) != nil {
             ringRadius = CGFloat(defaults.double(forKey: AppSettings.ringRadius))
+        }
+        if defaults.object(forKey: AppSettings.pointerSize) != nil {
+            pointerSize = CGFloat(defaults.double(forKey: AppSettings.pointerSize))
         }
         if defaults.object(forKey: AppSettings.fillOpacity) != nil {
             fillOpacity = CGFloat(defaults.double(forKey: AppSettings.fillOpacity))
@@ -415,48 +518,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if defaults.object(forKey: AppSettings.strokeOpacity) != nil {
             strokeOpacity = CGFloat(defaults.double(forKey: AppSettings.strokeOpacity))
         }
-        if let colorName = defaults.string(forKey: AppSettings.colorName), !colorName.isEmpty {
-            currentColorName = colorName
+        if let c = defaults.string(forKey: AppSettings.colorName), !c.isEmpty {
+            currentColorName = c
         }
         if defaults.object(forKey: AppSettings.showCenterDot) != nil {
-            centerDotEnabled = defaults.bool(forKey: AppSettings.showCenterDot)
+            showCenterDot = defaults.bool(forKey: AppSettings.showCenterDot)
         }
         if defaults.object(forKey: AppSettings.overlayVisible) != nil {
             overlayVisible = defaults.bool(forKey: AppSettings.overlayVisible)
         }
         if defaults.object(forKey: AppSettings.fakePointerVisible) != nil {
-            fakePointerVisible = defaults.bool(forKey: AppSettings.fakePointerVisible)
+            pointerVisible = defaults.bool(forKey: AppSettings.fakePointerVisible)
         }
 
-        if ringRadius < 8 { ringRadius = 8 }
-        if ringRadius > 200 { ringRadius = 200 }
+        ringRadius = min(max(ringRadius, 8), 200)
+        pointerSize = min(max(pointerSize, 12), 120)
         fillOpacity = min(max(fillOpacity, 0.0), 1.0)
         strokeOpacity = min(max(strokeOpacity, 0.0), 1.0)
     }
 
+    // MARK: Actions
+
     @objc private func toggleOverlay() {
         overlayVisible.toggle()
         applyVisibility()
-        updateOverlayPosition(force: true)
+        updatePosition(force: true)
     }
 
-    @objc private func toggleFakePointer() {
-        fakePointerVisible.toggle()
+    @objc private func togglePointer() {
+        pointerVisible.toggle()
         applyVisibility()
-        updateOverlayPosition(force: true)
+        updatePosition(force: true)
     }
 
     @objc private func toggleCenterDot() {
-        centerDotEnabled.toggle()
-        applySettingsToViews()
+        showCenterDot.toggle()
+        overlay.ringView?.showCenterDot = showCenterDot
     }
 
-    @objc private func setColorYellow() { setRingColor(name: "yellow") }
-    @objc private func setColorGreen() { setRingColor(name: "green") }
-    @objc private func setColorBlue() { setRingColor(name: "blue") }
-    @objc private func setColorRed() { setRingColor(name: "red") }
-    @objc private func setColorPurple() { setRingColor(name: "purple") }
-    @objc private func setColorCyan() { setRingColor(name: "cyan") }
+    @objc private func setColorYellow() { setRingColor("yellow") }
+    @objc private func setColorGreen() { setRingColor("green") }
+    @objc private func setColorBlue() { setRingColor("blue") }
+    @objc private func setColorRed() { setRingColor("red") }
+    @objc private func setColorPurple() { setRingColor("purple") }
+    @objc private func setColorCyan() { setRingColor("cyan") }
 
     @objc private func setRadius16() { setRadius(16) }
     @objc private func setRadius24() { setRadius(24) }
@@ -469,7 +574,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func setAlphaHigh() { setOpacity(fill: 0.24, stroke: 0.92) }
     @objc private func setAlphaVeryHigh() { setOpacity(fill: 0.34, stroke: 1.0) }
 
-    @objc private func quitApp() {
+    @objc private func pointerSmall() { setPointerSize(20) }
+    @objc private func pointerMedium() { setPointerSize(32) }
+    @objc private func pointerLarge() { setPointerSize(46) }
+    @objc private func pointerXL() { setPointerSize(62) }
+
+    @objc private func quit() {
         NSApp.terminate(nil)
     }
 }
