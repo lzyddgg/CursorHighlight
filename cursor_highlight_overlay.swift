@@ -138,11 +138,11 @@ final class PointerWindow: NSWindow {
         }
 
         pointerLayer.path = cgPath
-        pointerLayer.fillColor = NSColor.white.withAlphaComponent(0.98).cgColor
-        pointerLayer.strokeColor = NSColor.black.withAlphaComponent(0.95).cgColor
-        pointerLayer.lineWidth = 1.2
+        pointerLayer.fillColor = NSColor.black.withAlphaComponent(0.96).cgColor
+        pointerLayer.strokeColor = NSColor.white.withAlphaComponent(0.85).cgColor
+        pointerLayer.lineWidth = 1.0
         pointerLayer.shadowColor = NSColor.black.cgColor
-        pointerLayer.shadowOpacity = 0.28
+        pointerLayer.shadowOpacity = 0.22
         pointerLayer.shadowRadius = 1.5
         pointerLayer.shadowOffset = CGSize(width: 0.8, height: -0.8)
     }
@@ -156,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localMouseMonitor: Any?
     private var spaceObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
+    private var fallbackTimer: Timer?
 
     private let defaults = UserDefaults.standard
 
@@ -178,12 +179,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applySettingsToViews()
         applyVisibility()
         setupMenuBar()
-        startEventDrivenTracking()
+        startHybridTracking()
         updateOverlayPosition(force: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        stopEventDrivenTracking()
+        stopHybridTracking()
         saveSettings()
     }
 
@@ -255,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return item
     }
 
-    private func startEventDrivenTracking() {
+    private func startHybridTracking() {
         let mouseEvents: NSEvent.EventTypeMask = [
             .mouseMoved,
             .leftMouseDragged,
@@ -264,6 +265,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .leftMouseDown,
             .rightMouseDown,
             .otherMouseDown,
+            .leftMouseUp,
+            .rightMouseUp,
+            .otherMouseUp,
             .scrollWheel,
             .cursorUpdate
         ]
@@ -275,6 +279,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseEvents) { [weak self] event in
             self?.updateOverlayPosition(force: false)
             return event
+        }
+
+        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 12.0, repeats: true) { [weak self] _ in
+            self?.updateOverlayPosition(force: false)
+        }
+        if let fallbackTimer {
+            RunLoop.main.add(fallbackTimer, forMode: .common)
         }
 
         let center = NSWorkspace.shared.notificationCenter
@@ -295,7 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func stopEventDrivenTracking() {
+    private func stopHybridTracking() {
         if let globalMouseMonitor {
             NSEvent.removeMonitor(globalMouseMonitor)
             self.globalMouseMonitor = nil
@@ -304,6 +315,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(localMouseMonitor)
             self.localMouseMonitor = nil
         }
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
         let center = NSWorkspace.shared.notificationCenter
         if let spaceObserver {
             center.removeObserver(spaceObserver)
