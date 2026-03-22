@@ -130,6 +130,10 @@ final class PointerWindow: NSWindow {
                 cg.addLine(to: pts[0])
             case .curveTo:
                 cg.addCurve(to: pts[2], control1: pts[0], control2: pts[1])
+            case .cubicCurveTo:
+                cg.addCurve(to: pts[2], control1: pts[0], control2: pts[1])
+            case .quadraticCurveTo:
+                cg.addQuadCurve(to: pts[1], control: pts[0])
             case .closePath:
                 cg.closeSubpath()
             @unknown default:
@@ -301,31 +305,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installEventTap() {
-        let mask = (1 << CGEventType.mouseMoved.rawValue)
-            | (1 << CGEventType.leftMouseDragged.rawValue)
-            | (1 << CGEventType.rightMouseDragged.rawValue)
-            | (1 << CGEventType.otherMouseDragged.rawValue)
-            | (1 << CGEventType.leftMouseDown.rawValue)
-            | (1 << CGEventType.rightMouseDown.rawValue)
-            | (1 << CGEventType.otherMouseDown.rawValue)
-            | (1 << CGEventType.leftMouseUp.rawValue)
-            | (1 << CGEventType.rightMouseUp.rawValue)
-            | (1 << CGEventType.otherMouseUp.rawValue)
-            | (1 << CGEventType.scrollWheel.rawValue)
+        let eventTypes: [CGEventType] = [
+            .mouseMoved,
+            .leftMouseDragged,
+            .rightMouseDragged,
+            .otherMouseDragged,
+            .leftMouseDown,
+            .rightMouseDown,
+            .otherMouseDown,
+            .leftMouseUp,
+            .rightMouseUp,
+            .otherMouseUp,
+            .scrollWheel
+        ]
 
-        let callback: CGEventTapCallBack = { _, type, event, userInfo in
-            guard let userInfo else { return Unmanaged.passUnretained(event) }
-            let app = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
-
-            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                if let tap = app.eventTap {
-                    CGEvent.tapEnable(tap: tap, enable: true)
-                }
-                return Unmanaged.passUnretained(event)
-            }
-
-            app.noteMotionAndUpdatePosition()
-            return Unmanaged.passUnretained(event)
+        var mask: CGEventMask = 0
+        for type in eventTypes {
+            mask |= (CGEventMask(1) << CGEventMask(type.rawValue))
         }
 
         let userInfo = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
