@@ -324,6 +324,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             mask |= (CGEventMask(1) << CGEventMask(type.rawValue))
         }
 
+        let callback: CGEventTapCallBack = { _, type, event, userInfo in
+            guard let userInfo else {
+                return Unmanaged.passUnretained(event)
+            }
+            let app = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
+
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                if let tap = app.eventTap {
+                    CGEvent.tapEnable(tap: tap, enable: true)
+                }
+                return Unmanaged.passUnretained(event)
+            }
+
+            app.noteMotionAndUpdatePosition()
+            return Unmanaged.passUnretained(event)
+        }
+
         let userInfo = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
