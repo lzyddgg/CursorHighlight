@@ -12,8 +12,6 @@ struct AppSettings {
     static let pointerSize = "pointerSize"
 }
 
-// MARK: - Ring View
-
 final class RingView: NSView {
     var ringColor: NSColor = .systemYellow { didSet { needsDisplay = true } }
     var fillOpacity: CGFloat = 0.18 { didSet { needsDisplay = true } }
@@ -51,7 +49,6 @@ final class OverlayWindow: NSWindow {
     init(diameter: CGFloat) {
         let frame = NSRect(x: 0, y: 0, width: diameter, height: diameter)
         super.init(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
-
         isReleasedWhenClosed = false
         level = .screenSaver
         isOpaque = false
@@ -59,7 +56,6 @@ final class OverlayWindow: NSWindow {
         hasShadow = false
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-
         contentView = RingView(frame: frame)
     }
 
@@ -73,10 +69,10 @@ final class OverlayWindow: NSWindow {
     }
 }
 
-// MARK: - Fake Pointer
-
 final class PointerWindow: NSWindow {
-    private let pointerLayer = CAShapeLayer()
+    private let imageView = NSImageView(frame: .zero)
+    private let cursor = NSCursor.arrow
+    private var baseImageSize: NSSize = .zero
 
     init(size: CGFloat) {
         let frame = NSRect(x: 0, y: 0, width: size, height: size)
@@ -91,70 +87,35 @@ final class PointerWindow: NSWindow {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
         let view = NSView(frame: frame)
-        view.wantsLayer = true
         contentView = view
-        view.layer?.addSublayer(pointerLayer)
-        redrawPointer()
+
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.image = cursor.image
+        imageView.wantsLayer = true
+        imageView.layer?.shadowColor = NSColor.black.cgColor
+        imageView.layer?.shadowOpacity = 0.12
+        imageView.layer?.shadowRadius = 1.0
+        imageView.layer?.shadowOffset = CGSize(width: 0.5, height: -0.5)
+        baseImageSize = cursor.image.size
+        view.addSubview(imageView)
+        resize(size)
     }
 
     func resize(_ size: CGFloat) {
-        let newFrame = NSRect(origin: frame.origin, size: NSSize(width: size, height: size))
+        let scale = max(0.4, size / max(baseImageSize.width, baseImageSize.height))
+        let imageSize = NSSize(width: baseImageSize.width * scale, height: baseImageSize.height * scale)
+        let newFrame = NSRect(origin: frame.origin, size: imageSize)
         setFrame(newFrame, display: true)
-        contentView?.frame = NSRect(origin: .zero, size: newFrame.size)
-        redrawPointer()
+        contentView?.frame = NSRect(origin: .zero, size: imageSize)
+        imageView.frame = NSRect(origin: .zero, size: imageSize)
     }
 
-    private func redrawPointer() {
-        let w = frame.width
-        let h = frame.height
-
-        let p = NSBezierPath()
-        p.move(to: NSPoint(x: w * 0.15, y: h * 0.95))
-        p.line(to: NSPoint(x: w * 0.15, y: h * 0.05))
-        p.line(to: NSPoint(x: w * 0.64, y: h * 0.34))
-        p.line(to: NSPoint(x: w * 0.52, y: h * 0.31))
-        p.line(to: NSPoint(x: w * 0.76, y: h * 0.05))
-        p.line(to: NSPoint(x: w * 0.62, y: h * 0.02))
-        p.line(to: NSPoint(x: w * 0.40, y: h * 0.30))
-        p.line(to: NSPoint(x: w * 0.35, y: h * 0.45))
-        p.close()
-
-        let cg = CGMutablePath()
-        for i in 0..<p.elementCount {
-            var pts = [NSPoint](repeating: .zero, count: 3)
-            let t = p.element(at: i, associatedPoints: &pts)
-            switch t {
-            case .moveTo:
-                cg.move(to: pts[0])
-            case .lineTo:
-                cg.addLine(to: pts[0])
-            case .curveTo:
-                cg.addCurve(to: pts[2], control1: pts[0], control2: pts[1])
-            case .cubicCurveTo:
-                cg.addCurve(to: pts[2], control1: pts[0], control2: pts[1])
-            case .quadraticCurveTo:
-                cg.addQuadCurve(to: pts[1], control: pts[0])
-            case .closePath:
-                cg.closeSubpath()
-            @unknown default:
-                break
-            }
-        }
-
-        pointerLayer.frame = CGRect(x: 0, y: 0, width: w, height: h)
-        pointerLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
-        pointerLayer.path = cg
-        pointerLayer.fillColor = NSColor.black.withAlphaComponent(0.96).cgColor
-        pointerLayer.strokeColor = NSColor.white.withAlphaComponent(0.85).cgColor
-        pointerLayer.lineWidth = max(1.0, w * 0.03)
-        pointerLayer.shadowColor = NSColor.black.cgColor
-        pointerLayer.shadowOpacity = 0.22
-        pointerLayer.shadowRadius = max(1.0, w * 0.04)
-        pointerLayer.shadowOffset = CGSize(width: 0.8, height: -0.8)
+    func hotspotOffset() -> NSPoint {
+        let scaleX = frame.width / max(baseImageSize.width, 1)
+        let scaleY = frame.height / max(baseImageSize.height, 1)
+        return NSPoint(x: cursor.hotSpot.x * scaleX, y: cursor.hotSpot.y * scaleY)
     }
 }
-
-// MARK: - App Delegate
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: OverlayWindow!
@@ -182,6 +143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var lastMouseLocation: CGPoint = .zero
     private var lastMotionTimestamp: CFAbsoluteTime = 0
+    private var fastPollingUntil: CFAbsoluteTime = 0
+    private var lastRedrawTimestamp: CFAbsoluteTime = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -202,8 +165,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stopTracking()
         saveSettings()
     }
-
-    // MARK: Menu
 
     private func setupMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -266,8 +227,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return item
     }
 
-    // MARK: Tracking
-
     private func startTracking() {
         installEventTap()
         installLocalMonitor()
@@ -306,16 +265,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installEventTap() {
         let eventTypes: [CGEventType] = [
-            .mouseMoved,
-            .leftMouseDragged,
-            .rightMouseDragged,
-            .otherMouseDragged,
-            .leftMouseDown,
-            .rightMouseDown,
-            .otherMouseDown,
-            .leftMouseUp,
-            .rightMouseUp,
-            .otherMouseUp,
+            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+            .leftMouseDown, .rightMouseDown, .otherMouseDown,
+            .leftMouseUp, .rightMouseUp, .otherMouseUp,
             .scrollWheel
         ]
 
@@ -325,9 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let callback: CGEventTapCallBack = { _, type, event, userInfo in
-            guard let userInfo else {
-                return Unmanaged.passUnretained(event)
-            }
+            guard let userInfo else { return Unmanaged.passUnretained(event) }
             let app = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
 
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
@@ -346,11 +296,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .listenOnly,
-            eventsOfInterest: CGEventMask(mask),
+            eventsOfInterest: mask,
             callback: callback,
             userInfo: userInfo
         ) else {
-            installFallbackTimer(hz: 30)
+            installFallbackTimer(baseHz: 24)
             return
         }
 
@@ -363,18 +313,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installLocalMonitor() {
         let mask: NSEvent.EventTypeMask = [
-            .mouseMoved,
-            .leftMouseDragged,
-            .rightMouseDragged,
-            .otherMouseDragged,
-            .leftMouseDown,
-            .rightMouseDown,
-            .otherMouseDown,
-            .leftMouseUp,
-            .rightMouseUp,
-            .otherMouseUp,
-            .scrollWheel,
-            .cursorUpdate
+            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+            .leftMouseDown, .rightMouseDown, .otherMouseDown,
+            .leftMouseUp, .rightMouseUp, .otherMouseUp,
+            .scrollWheel, .cursorUpdate
         ]
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
@@ -383,10 +325,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func installFallbackTimer(hz: Double = 20) {
+    private func installFallbackTimer(baseHz: Double = 12) {
         fallbackTimer?.invalidate()
-        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / hz, repeats: true) { [weak self] _ in
-            self?.adaptivePollingTick()
+        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.adaptivePollingTick(baseHz: baseHz)
         }
         if let fallbackTimer {
             RunLoop.main.add(fallbackTimer, forMode: .common)
@@ -413,29 +355,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func noteMotionAndUpdatePosition() {
-        lastMotionTimestamp = CFAbsoluteTimeGetCurrent()
+        let now = CFAbsoluteTimeGetCurrent()
+        lastMotionTimestamp = now
+        fastPollingUntil = now + 0.35
         updatePosition(force: false)
     }
 
-    private func adaptivePollingTick() {
+    private func adaptivePollingTick(baseHz: Double) {
         let now = CFAbsoluteTimeGetCurrent()
-        let elapsed = now - lastMotionTimestamp
+        guard overlayVisible || pointerVisible else { return }
 
-        if elapsed < 0.20 {
-            updatePosition(force: false)
-            return
-        }
-
-        if elapsed < 1.20 {
-            updatePosition(force: false)
-            return
-        }
-
-        if overlayVisible || pointerVisible {
-            let p = NSEvent.mouseLocation
-            if abs(p.x - lastMouseLocation.x) > 0.1 || abs(p.y - lastMouseLocation.y) > 0.1 {
+        if now < fastPollingUntil {
+            if now - lastRedrawTimestamp >= (1.0 / 60.0) {
                 updatePosition(force: false)
             }
+            return
+        }
+
+        let baseInterval = 1.0 / max(baseHz, 1)
+        if now - lastRedrawTimestamp < baseInterval { return }
+
+        let p = NSEvent.mouseLocation
+        if abs(p.x - lastMouseLocation.x) > 0.1 || abs(p.y - lastMouseLocation.y) > 0.1 {
+            updatePosition(force: false)
         }
     }
 
@@ -444,6 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let p = NSEvent.mouseLocation
         lastMouseLocation = p
+        lastRedrawTimestamp = CFAbsoluteTimeGetCurrent()
 
         if overlayVisible {
             overlay.setFrameOrigin(NSPoint(x: p.x - ringRadius, y: p.y - ringRadius))
@@ -451,12 +394,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if pointerVisible {
-            pointer.setFrameOrigin(NSPoint(x: p.x - pointerSize * 0.20, y: p.y - pointerSize * 0.90))
+            let hot = pointer.hotspotOffset()
+            let origin = NSPoint(x: p.x - hot.x, y: p.y - (pointer.frame.height - hot.y))
+            pointer.setFrameOrigin(origin)
             pointer.orderFrontRegardless()
         }
     }
-
-    // MARK: Settings / Appearance
 
     private func applyVisualSettings() {
         overlay.updateDiameter(ringRadius * 2)
@@ -549,8 +492,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fillOpacity = min(max(fillOpacity, 0.0), 1.0)
         strokeOpacity = min(max(strokeOpacity, 0.0), 1.0)
     }
-
-    // MARK: Actions
 
     @objc private func toggleOverlay() {
         overlayVisible.toggle()
