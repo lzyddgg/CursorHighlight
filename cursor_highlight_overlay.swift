@@ -130,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
 
-    private let defaults = UserDefaults.standard
+    private let defaults = UserDefaults(suiteName: "com.example.cursorhighlight") ?? .standard
 
     private var ringRadius: CGFloat = 28 { didSet { saveSettings() } }
     private var pointerSize: CGFloat = 36 { didSet { saveSettings() } }
