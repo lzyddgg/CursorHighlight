@@ -71,7 +71,7 @@ final class OverlayWindow: NSWindow {
 
 final class PointerWindow: NSWindow {
     private let imageView = NSImageView(frame: .zero)
-    private let cursor = NSCursor.arrow
+    private var cursor: NSCursor = .arrow
     private var baseImageSize: NSSize = .zero
 
     init(size: CGFloat) {
@@ -90,19 +90,27 @@ final class PointerWindow: NSWindow {
         contentView = view
 
         imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.image = cursor.image
         imageView.wantsLayer = true
         imageView.layer?.shadowColor = NSColor.black.cgColor
         imageView.layer?.shadowOpacity = 0.12
         imageView.layer?.shadowRadius = 1.0
         imageView.layer?.shadowOffset = CGSize(width: 0.5, height: -0.5)
-        baseImageSize = cursor.image.size
         view.addSubview(imageView)
+
+        setCursor(.arrow)
         resize(size)
     }
 
+    func setCursor(_ newCursor: NSCursor) {
+        cursor = newCursor
+        imageView.image = newCursor.image
+        baseImageSize = newCursor.image.size
+        resize(max(frame.width, 1))
+    }
+
     func resize(_ size: CGFloat) {
-        let scale = max(0.4, size / max(baseImageSize.width, baseImageSize.height))
+        let base = max(baseImageSize.width, baseImageSize.height, 1)
+        let scale = max(0.35, size / base)
         let imageSize = NSSize(width: baseImageSize.width * scale, height: baseImageSize.height * scale)
         let newFrame = NSRect(origin: frame.origin, size: imageSize)
         setFrame(newFrame, display: true)
@@ -146,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var fastPollingUntil: CFAbsoluteTime = 0
     private var lastRedrawTimestamp: CFAbsoluteTime = 0
     private var isRestoringSettings = false
+    private var lastCursorFingerprint = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -361,12 +370,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let now = CFAbsoluteTimeGetCurrent()
         lastMotionTimestamp = now
         fastPollingUntil = now + 0.35
+        refreshPointerCursorIfNeeded()
         updatePosition(force: false)
     }
 
     private func adaptivePollingTick(baseHz: Double) {
         let now = CFAbsoluteTimeGetCurrent()
         guard overlayVisible || pointerVisible else { return }
+
+        refreshPointerCursorIfNeeded()
+
+        if now < fastPollingUntil {
+            if now - lastRedrawTimestamp >= (1.0 / 60.0) {
+                updatePosition(force: false)
+            }
+            return
+        }
+
+        let baseInterval = 1.0 / max(baseHz, 1)
+        if now - lastRedrawTimestamp < baseInterval { return }
+
+        let p = NSEvent.mouseLocation
+        if abs(p.x - lastMouseLocation.x) > 0.1 || abs(p.y - lastMouseLocation.y) > 0.1 {
+            updatePosition(force: false)
+        }
+    }
 
         if now < fastPollingUntil {
             if now - lastRedrawTimestamp >= (1.0 / 60.0) {
@@ -386,6 +414,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updatePosition(force: Bool) {
         guard overlayVisible || pointerVisible || force else { return }
+
+        refreshPointerCursorIfNeeded()
+
+        let p = NSEvent.mouseLocation
+        lastMouseLocation = p
+        lastRedrawTimestamp = CFAbsoluteTimeGetCurrent()
+
+        if overlayVisible {
+            overlay.setFrameOrigin(NSPoint(x: p.x - ringRadius, y: p.y - ringRadius))
+            overlay.orderFrontRegardless()
+        }
+
+        if pointerVisible {
+            let hot = pointer.hotspotOffset()
+            let origin = NSPoint(x: p.x - hot.x, y: p.y - (pointer.frame.height - hot.y))
+            pointer.setFrameOrigin(origin)
+            pointer.orderFrontRegardless()
+        }
+    }
 
         let p = NSEvent.mouseLocation
         lastMouseLocation = p
@@ -411,11 +458,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.ringView?.strokeOpacity = strokeOpacity
         overlay.ringView?.showCenterDot = showCenterDot
         pointer.resize(pointerSize)
+        refreshPointerCursorIfNeeded(force: true)
     }
 
     private func applyVisibility() {
         overlayVisible ? overlay.orderFront(nil) : overlay.orderOut(nil)
         pointerVisible ? pointer.orderFront(nil) : pointer.orderOut(nil)
+    }
+
+    private func currentBestCursor() -> NSCursor {
+        return NSCursor.current ?? .arrow
+    }
+
+    private func cursorFingerprint(_ cursor: NSCursor) -> String {
+        let s = cursor.image.size
+        let h = cursor.hotSpot
+        return "\(Int(s.width))x\(Int(s.height))_\(Int(h.x))_\(Int(h.y))"
+    }
+
+    private func refreshPointerCursorIfNeeded(force: Bool = false) {
+        guard pointerVisible || force else { return }
+        let cursor = currentBestCursor()
+        let fingerprint = cursorFingerprint(cursor)
+        if force || fingerprint != lastCursorFingerprint {
+            lastCursorFingerprint = fingerprint
+            pointer.setCursor(cursor)
+            pointer.resize(pointerSize)
+        }
     }
 
     private func colorFromName(_ name: String) -> NSColor {
