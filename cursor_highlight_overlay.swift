@@ -145,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastMotionTimestamp: CFAbsoluteTime = 0
     private var fastPollingUntil: CFAbsoluteTime = 0
     private var lastRedrawTimestamp: CFAbsoluteTime = 0
+    private var isRestoringSettings = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -457,6 +458,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func saveSettings() {
+        guard !isRestoringSettings else { return }
         defaults.set(Double(ringRadius), forKey: AppSettings.ringRadius)
         defaults.set(Double(pointerSize), forKey: AppSettings.pointerSize)
         defaults.set(Double(fillOpacity), forKey: AppSettings.fillOpacity)
@@ -469,6 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func loadSettings() {
+        isRestoringSettings = true
         if defaults.object(forKey: AppSettings.ringRadius) != nil {
             ringRadius = CGFloat(defaults.double(forKey: AppSettings.ringRadius))
         }
@@ -498,6 +501,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pointerSize = min(max(pointerSize, 12), 120)
         fillOpacity = min(max(fillOpacity, 0.0), 1.0)
         strokeOpacity = min(max(strokeOpacity, 0.0), 1.0)
+        isRestoringSettings = false
     }
 
     @objc private func toggleOverlay() {
