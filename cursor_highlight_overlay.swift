@@ -159,6 +159,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenu()
         startTracking()
         updatePosition(force: true)
+
+        saveSettings()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -429,12 +431,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setRingColor(_ name: String) {
         currentColorName = name
         overlay.ringView?.ringColor = colorFromName(name)
+        saveSettings()
     }
 
     private func setRadius(_ radius: CGFloat) {
         ringRadius = radius
         overlay.updateDiameter(radius * 2)
         updatePosition(force: true)
+        saveSettings()
     }
 
     private func setOpacity(fill: CGFloat, stroke: CGFloat) {
@@ -442,12 +446,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         strokeOpacity = stroke
         overlay.ringView?.fillOpacity = fill
         overlay.ringView?.strokeOpacity = stroke
+        saveSettings()
     }
 
     private func setPointerSize(_ size: CGFloat) {
         pointerSize = size
         pointer.resize(size)
         updatePosition(force: true)
+        saveSettings()
     }
 
     private func saveSettings() {
@@ -459,6 +465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         defaults.set(showCenterDot, forKey: AppSettings.showCenterDot)
         defaults.set(overlayVisible, forKey: AppSettings.overlayVisible)
         defaults.set(pointerVisible, forKey: AppSettings.fakePointerVisible)
+        defaults.synchronize()
     }
 
     private func loadSettings() {
@@ -508,6 +515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleCenterDot() {
         showCenterDot.toggle()
         overlay.ringView?.showCenterDot = showCenterDot
+        saveSettings()
     }
 
     @objc private func setColorYellow() { setRingColor("yellow") }
