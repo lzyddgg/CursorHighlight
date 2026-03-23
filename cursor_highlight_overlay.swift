@@ -169,7 +169,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenu()
         startTracking()
         updatePosition(force: true)
-
         saveSettings()
     }
 
@@ -396,19 +395,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-        if now < fastPollingUntil {
-            if now - lastRedrawTimestamp >= (1.0 / 60.0) {
-                updatePosition(force: false)
-            }
-            return
-        }
+    private func currentBestCursor() -> NSCursor {
+        NSCursor.current ?? .arrow
+    }
 
-        let baseInterval = 1.0 / max(baseHz, 1)
-        if now - lastRedrawTimestamp < baseInterval { return }
+    private func cursorFingerprint(_ cursor: NSCursor) -> String {
+        let s = cursor.image.size
+        let h = cursor.hotSpot
+        return "\(Int(s.width))x\(Int(s.height))_\(Int(h.x))_\(Int(h.y))"
+    }
 
-        let p = NSEvent.mouseLocation
-        if abs(p.x - lastMouseLocation.x) > 0.1 || abs(p.y - lastMouseLocation.y) > 0.1 {
-            updatePosition(force: false)
+    private func refreshPointerCursorIfNeeded(force: Bool = false) {
+        guard pointerVisible || force else { return }
+        let cursor = currentBestCursor()
+        let fingerprint = cursorFingerprint(cursor)
+        if force || fingerprint != lastCursorFingerprint {
+            lastCursorFingerprint = fingerprint
+            pointer.setCursor(cursor)
+            pointer.resize(pointerSize)
         }
     }
 
@@ -416,23 +420,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard overlayVisible || pointerVisible || force else { return }
 
         refreshPointerCursorIfNeeded()
-
-        let p = NSEvent.mouseLocation
-        lastMouseLocation = p
-        lastRedrawTimestamp = CFAbsoluteTimeGetCurrent()
-
-        if overlayVisible {
-            overlay.setFrameOrigin(NSPoint(x: p.x - ringRadius, y: p.y - ringRadius))
-            overlay.orderFrontRegardless()
-        }
-
-        if pointerVisible {
-            let hot = pointer.hotspotOffset()
-            let origin = NSPoint(x: p.x - hot.x, y: p.y - (pointer.frame.height - hot.y))
-            pointer.setFrameOrigin(origin)
-            pointer.orderFrontRegardless()
-        }
-    }
 
         let p = NSEvent.mouseLocation
         lastMouseLocation = p
@@ -464,27 +451,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyVisibility() {
         overlayVisible ? overlay.orderFront(nil) : overlay.orderOut(nil)
         pointerVisible ? pointer.orderFront(nil) : pointer.orderOut(nil)
-    }
-
-    private func currentBestCursor() -> NSCursor {
-        return NSCursor.current ?? .arrow
-    }
-
-    private func cursorFingerprint(_ cursor: NSCursor) -> String {
-        let s = cursor.image.size
-        let h = cursor.hotSpot
-        return "\(Int(s.width))x\(Int(s.height))_\(Int(h.x))_\(Int(h.y))"
-    }
-
-    private func refreshPointerCursorIfNeeded(force: Bool = false) {
-        guard pointerVisible || force else { return }
-        let cursor = currentBestCursor()
-        let fingerprint = cursorFingerprint(cursor)
-        if force || fingerprint != lastCursorFingerprint {
-            lastCursorFingerprint = fingerprint
-            pointer.setCursor(cursor)
-            pointer.resize(pointerSize)
-        }
     }
 
     private func colorFromName(_ name: String) -> NSColor {
@@ -541,6 +507,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func loadSettings() {
         isRestoringSettings = true
+
         if defaults.object(forKey: AppSettings.ringRadius) != nil {
             ringRadius = CGFloat(defaults.double(forKey: AppSettings.ringRadius))
         }
@@ -570,6 +537,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pointerSize = min(max(pointerSize, 12), 120)
         fillOpacity = min(max(fillOpacity, 0.0), 1.0)
         strokeOpacity = min(max(strokeOpacity, 0.0), 1.0)
+
         isRestoringSettings = false
     }
 
